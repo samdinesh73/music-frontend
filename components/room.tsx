@@ -7,16 +7,14 @@ import { getYoutubeVideoInfo } from '@/lib/youtube';
 import {
   Users, Copy, Check, Send, Plus, Trash2,
   Film, MessageSquare, ListMusic, LogOut,
-  Search, Link, X, Loader2, Music2
+  Search, Link, X, Loader2, Music2, ChevronLeft
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 interface RoomProps {
   roomId:           string;
   username:         string;
@@ -25,11 +23,11 @@ interface RoomProps {
 }
 
 interface PlaylistItem {
-  id:       string;
-  title:    string;
-  url:      string;
-  type:     'youtube';
-  addedBy:  string;
+  id:        string;
+  title:     string;
+  url:       string;
+  type:      'youtube';
+  addedBy:   string;
   thumbnail?: string;
 }
 
@@ -47,79 +45,66 @@ interface ChatMessage {
 }
 
 interface SearchResult {
-  id:          string;
-  title:       string;
-  channel:     string;
-  thumbnail:   string;
-  publishedAt: string;
-  url:         string;
+  id:        string;
+  title:     string;
+  channel:   string;
+  thumbnail: string;
+  url:       string;
 }
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000';
 
-// ─── Component ────────────────────────────────────────────────────────────────
 export default function Room({ roomId, username, initialRoomState, onLeave }: RoomProps) {
   const { socket, isConnected } = useSocket();
 
-  // ── Room State ──
   const [playlist,     setPlaylist]     = useState<PlaylistItem[]>(initialRoomState?.playlist     || []);
   const [currentIndex, setCurrentIndex] = useState<number>       (initialRoomState?.currentIndex || 0);
   const [isPlaying,    setIsPlaying]    = useState<boolean>      (initialRoomState?.isPlaying    || false);
   const [seekTime,     setSeekTime]     = useState<number>       (initialRoomState?.seekTime     || 0);
   const [users,        setUsers]        = useState<User[]>       (initialRoomState?.users        || []);
 
-  // ── Local UI State ──
-  const [volume,          setVolume]          = useState(0.6);
-  const [chatMessages,    setChatMessages]    = useState<ChatMessage[]>([]);
-  const [chatInput,       setChatInput]       = useState('');
-  const [copied,          setCopied]          = useState(false);
+  const [volume,        setVolume]        = useState(0.6);
+  const [chatMessages,  setChatMessages]  = useState<ChatMessage[]>([]);
+  const [chatInput,     setChatInput]     = useState('');
+  const [copied,        setCopied]        = useState(false);
 
-  // Search state
-  const [searchQuery,     setSearchQuery]     = useState('');
-  const [searchResults,   setSearchResults]   = useState<SearchResult[]>([]);
-  const [isSearching,     setIsSearching]     = useState(false);
-  const [searchError,     setSearchError]     = useState<string | null>(null);
-  const [addingId,        setAddingId]        = useState<string | null>(null);
+  const [searchQuery,   setSearchQuery]   = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isSearching,   setIsSearching]   = useState(false);
+  const [searchError,   setSearchError]   = useState<string | null>(null);
+  const [addingId,      setAddingId]      = useState<string | null>(null);
 
-  // URL paste state
-  const [pasteUrl,        setPasteUrl]        = useState('');
-  const [isPasting,       setIsPasting]       = useState(false);
+  const [pasteUrl,      setPasteUrl]      = useState('');
+  const [isPasting,     setIsPasting]     = useState(false);
 
-  const chatBottomRef  = useRef<HTMLDivElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const stateRef       = useRef({ isPlaying, seekTime, currentIndex });
+  // Mobile panel toggle ('player' | 'add' | 'queue' | 'chat')
+  const [mobilePanel,   setMobilePanel]   = useState<'player' | 'add' | 'queue' | 'chat'>('player');
+
+  const chatBottomRef = useRef<HTMLDivElement>(null);
+  const stateRef      = useRef({ isPlaying, seekTime, currentIndex });
   useEffect(() => { stateRef.current = { isPlaying, seekTime, currentIndex }; }, [isPlaying, seekTime, currentIndex]);
 
   const currentSocketId = socket?.id;
   const isHost = users.find(u => u.id === currentSocketId)?.isHost ?? false;
 
-  // ── Socket Listeners ─────────────────────────────────────────────────────
+  // ── Socket listeners ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!socket) return;
-
     socket.on('room:users-updated', (u: User[]) => setUsers(u));
-
     socket.on('host:changed', ({ hostId, username: hName }) => {
       setUsers(prev => prev.map(u => ({ ...u, isHost: u.id === hostId })));
-      if (hostId === socket.id) toast.info('You are now the Host / DJ!', { duration: 5000 });
-      else toast.info(`${hName} is now the Host.`, { duration: 4000 });
+      if (hostId === socket.id) toast.info('You are now the Host.');
+      else toast.info(`${hName} is now the Host.`);
     });
-
-    socket.on('playback:sync', ({ isPlaying: p, seekTime: s, currentIndex: i }) => {
-      setCurrentIndex(i); setIsPlaying(p);
-      if (s !== undefined) setSeekTime(s);
-    });
-
-    socket.on('playback:seek',          ({ seekTime: s })                       => setSeekTime(s));
-    socket.on('playlist:updated',       ({ playlist: pl, currentIndex: i })     => { setPlaylist(pl); setCurrentIndex(i); });
-    socket.on('playlist:index-changed', ({ currentIndex: i, isPlaying: p })    => { setCurrentIndex(i); setIsPlaying(p); setSeekTime(0); });
-    socket.on('chat:message',           (msg: ChatMessage)                      => setChatMessages(prev => [...prev, msg]));
-
-    socket.on('host:request-status', ({ requesterId }) => {
+    socket.on('playback:sync',        ({ isPlaying: p, seekTime: s, currentIndex: i }) => { setCurrentIndex(i); setIsPlaying(p); if (s !== undefined) setSeekTime(s); });
+    socket.on('playback:seek',        ({ seekTime: s })                                 => setSeekTime(s));
+    socket.on('playlist:updated',     ({ playlist: pl, currentIndex: i })              => { setPlaylist(pl); setCurrentIndex(i); });
+    socket.on('playlist:index-changed',({ currentIndex: i, isPlaying: p })            => { setCurrentIndex(i); setIsPlaying(p); setSeekTime(0); });
+    socket.on('chat:message',         (msg: ChatMessage)                               => setChatMessages(prev => [...prev, msg]));
+    socket.on('host:request-status',  ({ requesterId }) => {
       const { isPlaying: p, seekTime: s } = stateRef.current;
       socket.emit('host:send-status', { roomId, requesterId, seekTime: s, isPlaying: p });
     });
-
     return () => {
       ['room:users-updated','host:changed','playback:sync','playback:seek',
        'playlist:updated','playlist:index-changed','chat:message','host:request-status']
@@ -129,95 +114,58 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
 
   useEffect(() => { chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
 
-  // ── Playback Handlers ────────────────────────────────────────────────────
-  const handlePlayToggle = (playing: boolean) => {
-    if (!isHost) return;
-    setIsPlaying(playing);
-    socket?.emit('playback:state', { roomId, isPlaying: playing, seekTime });
-  };
-  const handleSeek    = (s: number) => { if (!isHost) return; setSeekTime(s); socket?.emit('playback:seek', { roomId, seekTime: s }); };
-  const handleProgress = (t: number) => { if (!isHost) return; setSeekTime(t); };
-  const handleEnded   = () => { if (!isHost || !playlist.length) return; socket?.emit('playlist:select', { roomId, index: (currentIndex + 1) % playlist.length }); };
-  const handleNext    = () => { if (!isHost || !playlist.length) return; socket?.emit('playlist:select', { roomId, index: (currentIndex + 1) % playlist.length }); };
-  const handlePrev    = () => { if (!isHost || !playlist.length) return; socket?.emit('playlist:select', { roomId, index: (currentIndex - 1 + playlist.length) % playlist.length }); };
+  // ── Playback ──────────────────────────────────────────────────────────────
+  const handlePlayToggle = (p: boolean) => { if (!isHost) return; setIsPlaying(p); socket?.emit('playback:state', { roomId, isPlaying: p, seekTime }); };
+  const handleSeek       = (s: number)  => { if (!isHost) return; setSeekTime(s); socket?.emit('playback:seek', { roomId, seekTime: s }); };
+  const handleProgress   = (t: number)  => { if (!isHost) return; setSeekTime(t); };
+  const handleEnded      = ()           => { if (!isHost || !playlist.length) return; socket?.emit('playlist:select', { roomId, index: (currentIndex + 1) % playlist.length }); };
+  const handleNext       = ()           => { if (!isHost || !playlist.length) return; socket?.emit('playlist:select', { roomId, index: (currentIndex + 1) % playlist.length }); };
+  const handlePrev       = ()           => { if (!isHost || !playlist.length) return; socket?.emit('playlist:select', { roomId, index: (currentIndex - 1 + playlist.length) % playlist.length }); };
+  const selectTrack      = (i: number)  => { if (!isHost) { toast.error('Only the Host can switch videos.'); return; } socket?.emit('playlist:select', { roomId, index: i }); };
+  const removeTrack      = (e: React.MouseEvent, id: string) => { e.stopPropagation(); socket?.emit('playlist:remove', { roomId, itemId: id }); };
+  const clearQueue       = ()           => { if (!isHost) return; socket?.emit('playlist:clear', { roomId }); };
 
-  const selectTrack = (index: number) => {
-    if (!isHost) { toast.error('Only the Host / DJ can switch videos.'); return; }
-    socket?.emit('playlist:select', { roomId, index });
-  };
-  const removeTrack = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    socket?.emit('playlist:remove', { roomId, itemId: id });
-  };
-  const clearQueue = () => { if (!isHost) return; socket?.emit('playlist:clear', { roomId }); };
-
-  // ── YouTube Search ────────────────────────────────────────────────────────
+  // ── Search ────────────────────────────────────────────────────────────────
   const handleSearch = useCallback(async (e?: React.FormEvent) => {
     e?.preventDefault();
     const q = searchQuery.trim();
     if (!q) return;
-
-    setIsSearching(true);
-    setSearchError(null);
-    setSearchResults([]);
-
+    setIsSearching(true); setSearchError(null); setSearchResults([]);
     try {
       const res = await fetch(`${BACKEND_URL}/api/search?q=${encodeURIComponent(q)}&limit=12`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Search failed');
       setSearchResults(data.results || []);
-      if (!data.results?.length) setSearchError('No results found. Try a different search.');
+      if (!data.results?.length) setSearchError('No results. Try a different search.');
     } catch (err: any) {
-      setSearchError(err.message || 'Search failed. Check your API key.');
+      setSearchError(err.message || 'Search failed. Check your API key in backend/.env');
     } finally {
       setIsSearching(false);
     }
   }, [searchQuery]);
 
-  // Add from search result
   const addFromSearch = async (result: SearchResult) => {
     if (!socket) return;
     setAddingId(result.id);
-    try {
-      socket.emit('playlist:add', {
-        roomId,
-        item: {
-          title:     result.title,
-          url:       result.url,
-          type:      'youtube',
-          addedBy:   username,
-          thumbnail: result.thumbnail,
-        },
-      });
-      toast.success(`Added: ${result.title}`);
-    } finally {
-      setAddingId(null);
-    }
+    socket.emit('playlist:add', { roomId, item: { title: result.title, url: result.url, type: 'youtube', addedBy: username, thumbnail: result.thumbnail } });
+    toast.success('Added to queue');
+    setAddingId(null);
   };
 
-  // ── Paste URL ─────────────────────────────────────────────────────────────
   const handlePasteUrl = async (e: React.FormEvent) => {
     e.preventDefault();
     const raw = pasteUrl.trim();
     if (!raw || !socket) return;
-    if (!/youtube\.com|youtu\.be/i.test(raw)) {
-      toast.error('Please enter a valid YouTube URL.');
-      return;
-    }
+    if (!/youtube\.com|youtu\.be/i.test(raw)) { toast.error('Please enter a valid YouTube URL.'); return; }
     setIsPasting(true);
     try {
       const info = await getYoutubeVideoInfo(raw);
       socket.emit('playlist:add', { roomId, item: { title: info.title, url: raw, type: 'youtube', addedBy: username } });
-      setPasteUrl('');
-      toast.success(`Added: ${info.title}`);
-    } catch {
-      toast.error('Could not fetch video info. Check the URL.');
-    } finally {
-      setIsPasting(false);
-    }
+      setPasteUrl(''); toast.success('Added to queue');
+    } catch { toast.error('Could not fetch video info. Check the URL.'); }
+    finally { setIsPasting(false); }
   };
 
-  // ── Chat ──────────────────────────────────────────────────────────────────
   const handleSendChat = (e: React.FormEvent) => {
     e.preventDefault();
     const msg = chatInput.trim();
@@ -228,361 +176,398 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
 
   const copyRoomId = () => {
     navigator.clipboard.writeText(roomId);
-    setCopied(true);
-    toast.success('Room code copied!');
+    setCopied(true); toast.success('Room code copied!');
     setTimeout(() => setCopied(false), 2000);
   };
 
   const currentTrack = playlist[currentIndex] ?? null;
 
-  // ─────────────────────────────────────────────────────────────────────────
-  return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col">
+  // ── Add panel (Search + Paste tabs) ─────────────────────────────────────
+  const AddPanel = () => (
+    <div className="ss-card overflow-hidden">
+      <Tabs defaultValue="search">
+        <div className="border-b border-border px-4 pt-4 pb-0">
+          <TabsList className="grid grid-cols-2 bg-secondary p-0.5 w-44">
+            <TabsTrigger value="search" className="data-[state=active]:bg-card data-[state=active]:text-primary gap-1.5 text-xs py-1.5">
+              <Search className="w-3 h-3" /> Search
+            </TabsTrigger>
+            <TabsTrigger value="url" className="data-[state=active]:bg-card data-[state=active]:text-primary gap-1.5 text-xs py-1.5">
+              <Link className="w-3 h-3" /> URL
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
-      {/* ── Header ─────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 border-b border-zinc-800/70 bg-zinc-950/80 backdrop-blur-lg px-5 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-700/30">
-            <Music2 className="w-5 h-5 text-white" />
+        <TabsContent value="search" className="m-0 p-4 space-y-3">
+          <form onSubmit={handleSearch} className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Search YouTube…"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                disabled={isSearching}
+                className="ss-input pl-9 h-10 w-full"
+              />
+              {searchQuery && (
+                <button type="button" onClick={() => { setSearchQuery(''); setSearchResults([]); setSearchError(null); }}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            <Button type="submit" disabled={isSearching || !searchQuery.trim()}
+              className="bg-primary hover:bg-blue-500 text-white h-10 px-4">
+              {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+            </Button>
+          </form>
+
+          {searchError && (
+            <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-400">{searchError}</div>
+          )}
+
+          {searchResults.length > 0 && (
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {searchResults.map(result => (
+                <div key={result.id} className="flex items-center gap-3 p-2 rounded-xl border border-border hover:bg-secondary transition-colors">
+                  <div className="w-16 h-11 rounded-lg overflow-hidden bg-secondary shrink-0">
+                    {result.thumbnail && <img src={result.thumbnail} alt="" className="w-full h-full object-cover" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-foreground line-clamp-2 leading-snug">{result.title}</p>
+                    <p className="text-[10px] text-muted-foreground truncate mt-0.5">{result.channel}</p>
+                  </div>
+                  <button
+                    onClick={() => addFromSearch(result)}
+                    disabled={addingId === result.id}
+                    className="shrink-0 w-8 h-8 rounded-lg bg-primary hover:bg-blue-500 flex items-center justify-center active:scale-90 transition-all disabled:opacity-60"
+                  >
+                    {addingId === result.id ? <Loader2 className="w-3.5 h-3.5 text-white animate-spin" /> : <Plus className="w-3.5 h-3.5 text-white" />}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!isSearching && !searchResults.length && !searchError && (
+            <div className="py-8 flex flex-col items-center gap-2 text-muted-foreground">
+              <Search className="w-6 h-6 opacity-30" />
+              <p className="text-xs text-center">Type to search YouTube videos</p>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="url" className="m-0 p-4 space-y-3">
+          <p className="text-xs text-muted-foreground">Paste a YouTube video URL to add it directly.</p>
+          <form onSubmit={handlePasteUrl} className="flex gap-2">
+            <Input
+              placeholder="https://youtube.com/watch?v=..."
+              value={pasteUrl}
+              onChange={e => setPasteUrl(e.target.value)}
+              disabled={isPasting}
+              className="ss-input h-10 flex-1"
+            />
+            <Button type="submit" disabled={isPasting || !pasteUrl.trim()}
+              className="bg-primary hover:bg-blue-500 text-white h-10 px-4">
+              {isPasting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            </Button>
+          </form>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+
+  // ── Queue panel ──────────────────────────────────────────────────────────
+  const QueuePanel = () => (
+    <div className="ss-card flex flex-col overflow-hidden" style={{ maxHeight: '420px' }}>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+        <span className="text-xs font-semibold text-foreground flex items-center gap-2">
+          <ListMusic className="w-3.5 h-3.5 text-primary" /> Queue ({playlist.length})
+        </span>
+        {isHost && playlist.length > 0 && (
+          <button onClick={clearQueue} className="text-[10px] text-red-400 hover:text-red-300 font-semibold">Clear</button>
+        )}
+      </div>
+      <ScrollArea className="flex-1 p-3">
+        {playlist.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-28 gap-2 text-muted-foreground">
+            <Film className="w-5 h-5 opacity-30" />
+            <p className="text-xs">Queue is empty</p>
           </div>
-          <div>
-            <h1 className="text-lg font-extrabold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent leading-none">
-              SoundSync
-            </h1>
-            <p className="text-[10px] text-zinc-500 font-medium">Real-time Music Room</p>
+        ) : (
+          <div className="space-y-1.5">
+            {playlist.map((track, idx) => {
+              const isCurrent = idx === currentIndex;
+              return (
+                <div key={track.id} onClick={() => selectTrack(idx)}
+                  className={`group flex items-center gap-2.5 p-2 rounded-xl border transition-colors ${
+                    isCurrent
+                      ? 'bg-primary/10 border-primary/30'
+                      : 'border-border hover:bg-secondary'
+                  } ${isHost ? 'cursor-pointer' : 'cursor-default'}`}>
+
+                  <div className={`w-8 h-8 rounded-lg shrink-0 overflow-hidden flex items-center justify-center border ${isCurrent ? 'border-primary/40' : 'border-border'}`}>
+                    {track.thumbnail
+                      ? <img src={track.thumbnail} alt="" className="w-full h-full object-cover" />
+                      : <Film className="w-3.5 h-3.5 text-muted-foreground" />}
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <p className={`text-[11px] font-semibold truncate ${isCurrent ? 'text-primary' : 'text-foreground'}`}>{track.title}</p>
+                    <p className="text-[9px] text-muted-foreground">by {track.addedBy}</p>
+                  </div>
+
+                  {/* Playing indicator */}
+                  {isCurrent && isPlaying && (
+                    <div className="flex items-end gap-0.5 h-4 shrink-0">
+                      {[1,2,3].map(i => (
+                        <span key={i} className="w-0.5 bg-primary rounded-full audio-bar"
+                          style={{ height: `${30 + i * 25}%`, animationDelay: `${i * 0.15}s` }} />
+                      ))}
+                    </div>
+                  )}
+
+                  {(isHost || track.addedBy === username) && (
+                    <button onClick={e => removeTrack(e, track.id)}
+                      className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 p-1 rounded transition-all shrink-0">
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </ScrollArea>
+    </div>
+  );
+
+  // ── Chat panel ───────────────────────────────────────────────────────────
+  const ChatPanel = () => (
+    <div className="ss-card flex flex-col overflow-hidden" style={{ maxHeight: '420px' }}>
+      <div className="flex items-center px-4 py-3 border-b border-border shrink-0">
+        <span className="text-xs font-semibold text-foreground flex items-center gap-2">
+          <MessageSquare className="w-3.5 h-3.5 text-primary" /> Chat
+        </span>
+      </div>
+      <ScrollArea className="flex-1 p-3">
+        {chatMessages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-28 gap-2 text-muted-foreground">
+            <MessageSquare className="w-5 h-5 opacity-30" />
+            <p className="text-xs">No messages yet</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {chatMessages.map(msg => {
+              const isMe = msg.sender === username;
+              return (
+                <div key={msg.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[85%] ${isMe ? 'ml-auto' : ''}`}>
+                  <div className="flex items-center gap-1.5 mb-0.5 px-1">
+                    <span className="text-[10px] font-bold text-muted-foreground">{msg.sender}</span>
+                    <span className="text-[9px] text-muted-foreground/50 font-mono">
+                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  <div className={`px-3 py-1.5 rounded-2xl text-xs leading-relaxed ${
+                    isMe ? 'bg-primary text-white rounded-tr-sm' : 'bg-secondary border border-border text-foreground rounded-tl-sm'
+                  }`}>{msg.message}</div>
+                </div>
+              );
+            })}
+            <div ref={chatBottomRef} />
+          </div>
+        )}
+      </ScrollArea>
+      <form onSubmit={handleSendChat} className="flex gap-2 p-3 border-t border-border shrink-0">
+        <Input
+          placeholder="Send a message…"
+          value={chatInput}
+          onChange={e => setChatInput(e.target.value)}
+          className="ss-input flex-1 h-9 text-xs"
+        />
+        <Button type="submit" size="icon" disabled={!chatInput.trim()}
+          className="bg-primary hover:bg-blue-500 text-white h-9 w-9 shrink-0">
+          <Send className="w-3.5 h-3.5" />
+        </Button>
+      </form>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
+
+      {/* ── Top Bar ─────────────────────────────────────────────────── */}
+      <header className="sticky top-0 z-50 border-b border-border bg-card px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center">
+            <Music2 className="w-4 h-4 text-white" />
+          </div>
+          <div className="leading-none">
+            <p className="text-sm font-bold text-foreground">SoundSync</p>
+            <p className="text-[10px] text-muted-foreground">Real-time room</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="hidden sm:flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-3 py-1.5 rounded-lg">
-            <span className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">Room</span>
-            <span className="font-mono font-extrabold text-indigo-400 text-sm tracking-widest">{roomId}</span>
-            <button onClick={copyRoomId} className="text-zinc-500 hover:text-zinc-200 transition-colors ml-1">
-              {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-            </button>
-          </div>
-          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`} />
-          <Button variant="destructive" size="sm" onClick={onLeave} className="gap-1.5 text-xs">
+          {/* Room code */}
+          <button onClick={copyRoomId}
+            className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary border border-border hover:bg-accent transition-colors">
+            <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Room</span>
+            <span className="font-mono font-bold text-primary text-sm tracking-wider">{roomId}</span>
+            {copied ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3 text-muted-foreground" />}
+          </button>
+
+          {/* Connection dot */}
+          <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`} />
+
+          <button onClick={onLeave}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 text-xs font-semibold transition-colors">
             <LogOut className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Leave</span>
-          </Button>
+          </button>
         </div>
       </header>
 
-      {/* ── Main Grid ──────────────────────────────────────────────────── */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-3 gap-5">
+      {/* ── Desktop Layout ─────────────────────────────────────────── */}
+      <main className="hidden md:grid md:grid-cols-3 gap-4 p-4 max-w-7xl w-full mx-auto flex-1">
 
-        {/* ── Left Column ── */}
-        <div className="lg:col-span-2 flex flex-col gap-5">
-
-          {/* Player */}
+        {/* Left: Player + Add */}
+        <div className="md:col-span-2 flex flex-col gap-4">
           <CustomPlayer
             url={currentTrack?.url ?? null}
-            isPlaying={isPlaying}
-            seekTime={seekTime}
-            isHost={isHost}
-            volume={volume}
-            onVolumeChange={setVolume}
-            onProgress={handleProgress}
-            onDuration={() => {}}
-            onPlayToggle={handlePlayToggle}
-            onSeek={handleSeek}
-            onEnded={handleEnded}
-            onNext={handleNext}
-            onPrev={handlePrev}
-            hasPrev={playlist.length > 1}
-            hasNext={playlist.length > 1}
+            isPlaying={isPlaying} seekTime={seekTime} isHost={isHost}
+            volume={volume} onVolumeChange={setVolume}
+            onProgress={handleProgress} onDuration={() => {}}
+            onPlayToggle={handlePlayToggle} onSeek={handleSeek}
+            onEnded={handleEnded} onNext={handleNext} onPrev={handlePrev}
+            hasPrev={playlist.length > 1} hasNext={playlist.length > 1}
           />
-
-          {/* Now Playing bar */}
           {currentTrack && (
-            <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-zinc-900/60 border border-zinc-800">
-              {currentTrack.thumbnail ? (
-                <img src={currentTrack.thumbnail} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" />
-              ) : (
-                <div className="w-10 h-10 rounded-lg bg-red-600/20 border border-red-500/30 flex items-center justify-center shrink-0">
-                  <Film className="w-4 h-4 text-red-500" />
-                </div>
-              )}
-              <div className="overflow-hidden flex-1">
-                <p className="text-xs font-bold text-zinc-200 truncate">{currentTrack.title}</p>
-                <p className="text-[10px] text-zinc-500">Added by {currentTrack.addedBy}</p>
+            <div className="ss-card flex items-center gap-3 px-4 py-3">
+              {currentTrack.thumbnail
+                ? <img src={currentTrack.thumbnail} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" />
+                : <div className="w-10 h-10 rounded-lg bg-secondary border border-border flex items-center justify-center shrink-0"><Film className="w-4 h-4 text-muted-foreground" /></div>}
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-foreground truncate">{currentTrack.title}</p>
+                <p className="text-[10px] text-muted-foreground">Added by {currentTrack.addedBy}</p>
               </div>
               {isPlaying && (
-                <div className="flex items-end gap-0.5 h-4 shrink-0">
-                  {[1,2,3].map(i => (
-                    <div key={i} className="w-1 bg-indigo-500 rounded-full animate-bounce"
-                      style={{ height: `${40 + i * 20}%`, animationDelay: `${i * 0.15}s` }} />
-                  ))}
+                <div className="ml-auto flex items-end gap-0.5 h-4 shrink-0">
+                  {[1,2,3].map(i => <span key={i} className="w-0.5 bg-primary rounded-full audio-bar" style={{ height: `${30+i*25}%`, animationDelay: `${i*0.15}s` }} />)}
                 </div>
               )}
             </div>
           )}
-
-          {/* ── Search / Add Panel ── */}
-          <Card className="bg-zinc-900/60 border-zinc-800 shadow-xl overflow-hidden">
-            <Tabs defaultValue="search">
-              <div className="border-b border-zinc-800/70 px-4 pt-4 pb-0">
-                <TabsList className="grid grid-cols-2 bg-zinc-950 border border-zinc-800 p-0.5 w-48">
-                  <TabsTrigger value="search" className="data-[state=active]:bg-zinc-800 data-[state=active]:text-indigo-400 gap-1.5 text-xs py-1.5">
-                    <Search className="w-3 h-3" /> Search
-                  </TabsTrigger>
-                  <TabsTrigger value="url" className="data-[state=active]:bg-zinc-800 data-[state=active]:text-indigo-400 gap-1.5 text-xs py-1.5">
-                    <Link className="w-3 h-3" /> Paste URL
-                  </TabsTrigger>
-                </TabsList>
-              </div>
-
-              {/* ── Search Tab ── */}
-              <TabsContent value="search" className="m-0 p-4 space-y-3">
-                <form onSubmit={handleSearch} className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none" />
-                    <Input
-                      ref={searchInputRef}
-                      placeholder="Search YouTube — artists, songs, albums…"
-                      value={searchQuery}
-                      onChange={e => setSearchQuery(e.target.value)}
-                      disabled={isSearching}
-                      className="pl-9 bg-zinc-950 border-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus-visible:ring-indigo-500 text-sm"
-                    />
-                    {searchQuery && (
-                      <button type="button" onClick={() => { setSearchQuery(''); setSearchResults([]); setSearchError(null); }}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300">
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                  <Button type="submit" disabled={isSearching || !searchQuery.trim()}
-                    className="bg-indigo-600 hover:bg-indigo-500 min-w-[80px] gap-1.5">
-                    {isSearching
-                      ? <Loader2 className="w-4 h-4 animate-spin" />
-                      : <><Search className="w-4 h-4" />Search</>}
-                  </Button>
-                </form>
-
-                {/* Error message */}
-                {searchError && (
-                  <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-3 py-2 text-xs text-red-400">
-                    {searchError}
-                  </div>
-                )}
-
-                {/* Results grid */}
-                {searchResults.length > 0 && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-80 overflow-y-auto pr-1">
-                    {searchResults.map(result => (
-                      <div key={result.id}
-                        className="group flex gap-2.5 p-2 rounded-xl bg-zinc-950/60 border border-zinc-900 hover:border-zinc-700 hover:bg-zinc-900/80 transition-all">
-                        {/* Thumbnail */}
-                        <div className="relative shrink-0 w-20 h-14 rounded-lg overflow-hidden bg-zinc-900 border border-zinc-800">
-                          {result.thumbnail
-                            ? <img src={result.thumbnail} alt="" className="w-full h-full object-cover" />
-                            : <Film className="absolute inset-0 m-auto w-5 h-5 text-zinc-600" />}
-                        </div>
-                        {/* Info */}
-                        <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
-                          <p className="text-[11px] font-semibold text-zinc-200 line-clamp-2 leading-snug">{result.title}</p>
-                          <p className="text-[10px] text-zinc-500 truncate">{result.channel}</p>
-                        </div>
-                        {/* Add button */}
-                        <button
-                          onClick={() => addFromSearch(result)}
-                          disabled={addingId === result.id}
-                          className="shrink-0 self-center w-7 h-7 rounded-lg bg-indigo-600 hover:bg-indigo-500 flex items-center justify-center transition-all disabled:opacity-60 active:scale-90"
-                          title="Add to queue"
-                        >
-                          {addingId === result.id
-                            ? <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
-                            : <Plus className="w-3.5 h-3.5 text-white" />}
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Empty state hint */}
-                {!isSearching && !searchResults.length && !searchError && (
-                  <div className="flex flex-col items-center justify-center py-6 gap-2 text-zinc-600">
-                    <Search className="w-8 h-8 opacity-30" />
-                    <p className="text-xs text-center">Search for any song, artist, or album<br />and add it directly to the room queue</p>
-                  </div>
-                )}
-              </TabsContent>
-
-              {/* ── Paste URL Tab ── */}
-              <TabsContent value="url" className="m-0 p-4">
-                <CardDescription className="text-[11px] text-zinc-500 mb-3">
-                  Paste a YouTube video URL directly. Useful when you have a specific link.
-                </CardDescription>
-                <form onSubmit={handlePasteUrl} className="flex gap-2">
-                  <Input
-                    placeholder="https://www.youtube.com/watch?v=..."
-                    value={pasteUrl}
-                    onChange={e => setPasteUrl(e.target.value)}
-                    disabled={isPasting}
-                    className="bg-zinc-950 border-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus-visible:ring-indigo-500 text-sm"
-                  />
-                  <Button type="submit" disabled={isPasting || !pasteUrl.trim()}
-                    className="bg-indigo-600 hover:bg-indigo-500 gap-1.5 min-w-[90px]">
-                    {isPasting
-                      ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      : <><Plus className="w-4 h-4" />Add</>}
-                  </Button>
-                </form>
-              </TabsContent>
-            </Tabs>
-          </Card>
+          <AddPanel />
         </div>
 
-        {/* ── Right Column ── */}
-        <div className="flex flex-col gap-5 lg:sticky lg:top-[65px] lg:h-[calc(100vh-85px)]">
-
-          {/* Active Users */}
-          <Card className="bg-zinc-900/60 border-zinc-800 shrink-0">
-            <CardHeader className="py-3 flex flex-row items-center space-y-0 gap-2">
-              <Users className="w-4 h-4 text-indigo-400" />
-              <CardTitle className="text-sm font-bold text-zinc-200">Listeners ({users.length})</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0 pb-3">
-              <div className="flex flex-wrap gap-1.5">
-                {users.map(u => (
-                  <div key={u.id}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${
-                      u.isHost ? 'bg-amber-500/10 border border-amber-500/30 text-amber-400'
-                               : 'bg-zinc-900 border border-zinc-800 text-zinc-300'
-                    }`}>
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                    {u.username}
-                    {u.isHost && <span className="text-[9px] text-amber-500 ml-0.5">DJ</span>}
-                    {u.id === currentSocketId && <span className="text-[9px] opacity-50">(you)</span>}
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Queue + Chat */}
-          <Card className="bg-zinc-900/60 border-zinc-800 flex flex-col flex-1 min-h-0 overflow-hidden">
-            <Tabs defaultValue="queue" className="flex flex-col h-full">
-              <div className="border-b border-zinc-800/70 px-3 pt-3 pb-0 shrink-0">
-                <TabsList className="grid grid-cols-2 bg-zinc-950 border border-zinc-800 p-0.5 w-full">
-                  <TabsTrigger value="queue" className="data-[state=active]:bg-zinc-800 data-[state=active]:text-indigo-400 gap-1.5 text-xs py-1.5">
-                    <ListMusic className="w-3.5 h-3.5" />Queue ({playlist.length})
-                  </TabsTrigger>
-                  <TabsTrigger value="chat" className="data-[state=active]:bg-zinc-800 data-[state=active]:text-indigo-400 gap-1.5 text-xs py-1.5">
-                    <MessageSquare className="w-3.5 h-3.5" />Chat
-                  </TabsTrigger>
-                </TabsList>
-              </div>
-
-              {/* Queue */}
-              <TabsContent value="queue" className="flex-1 flex flex-col m-0 p-0 min-h-0 overflow-hidden outline-none">
-                <div className="flex justify-between items-center px-3 py-2 border-b border-zinc-800/50 shrink-0">
-                  <span className="text-[10px] text-zinc-600">{isHost ? 'Click a video to play' : 'DJ controls playback'}</span>
-                  {isHost && playlist.length > 0 && (
-                    <button onClick={clearQueue} className="text-[10px] text-red-400 hover:text-red-300 font-semibold">Clear All</button>
-                  )}
+        {/* Right: Users + Queue + Chat */}
+        <div className="flex flex-col gap-4">
+          {/* Users */}
+          <div className="ss-card px-4 py-3">
+            <p className="text-xs font-semibold text-muted-foreground flex items-center gap-2 mb-3">
+              <Users className="w-3.5 h-3.5 text-primary" /> Listeners ({users.length})
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {users.map(u => (
+                <div key={u.id}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
+                    u.isHost ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-secondary border-border text-muted-foreground'
+                  }`}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                  {u.username}
+                  {u.isHost && <span className="text-[9px] font-bold">DJ</span>}
+                  {u.id === currentSocketId && <span className="opacity-40">(you)</span>}
                 </div>
-                <ScrollArea className="flex-1 p-3">
-                  {playlist.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-32 gap-2 text-zinc-600">
-                      <Film className="w-6 h-6 opacity-40" />
-                      <p className="text-xs">Queue is empty — search a song to add!</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {playlist.map((track, idx) => {
-                        const isCurrent = idx === currentIndex;
-                        return (
-                          <div key={track.id} onClick={() => selectTrack(idx)}
-                            className={`group flex items-center gap-2.5 p-2 rounded-xl border transition-all ${
-                              isCurrent
-                                ? 'bg-indigo-600/10 border-indigo-500/50'
-                                : 'bg-zinc-950/40 border-zinc-900 hover:bg-zinc-900/80 hover:border-zinc-800'
-                            } ${isHost ? 'cursor-pointer' : 'cursor-default'}`}>
-
-                            {/* Thumbnail or icon */}
-                            <div className={`w-8 h-8 rounded-lg shrink-0 overflow-hidden flex items-center justify-center ${
-                              isCurrent ? 'ring-2 ring-indigo-500' : ''}`}>
-                              {track.thumbnail
-                                ? <img src={track.thumbnail} alt="" className="w-full h-full object-cover" />
-                                : <div className={`w-full h-full flex items-center justify-center ${isCurrent ? 'bg-indigo-600' : 'bg-zinc-900 border border-zinc-800'}`}>
-                                    {isCurrent && isPlaying
-                                      ? <span className="flex gap-0.5 items-end h-3">
-                                          {[1,2,3].map(i => <span key={i} className="w-0.5 bg-white rounded-full animate-bounce" style={{ height: `${30+i*25}%`, animationDelay: `${i*0.12}s` }} />)}
-                                        </span>
-                                      : <Film className="w-3.5 h-3.5 text-zinc-500" />}
-                                  </div>}
-                            </div>
-
-                            <div className="min-w-0 flex-1">
-                              <p className={`text-[11px] font-semibold truncate ${isCurrent ? 'text-indigo-400' : 'text-zinc-200'}`}>{track.title}</p>
-                              <p className="text-[9px] text-zinc-600 truncate">by {track.addedBy}</p>
-                            </div>
-
-                            {(isHost || track.addedBy === username) && (
-                              <button onClick={e => removeTrack(e, track.id)}
-                                className="shrink-0 opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-400 p-1 rounded transition-all">
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </ScrollArea>
-              </TabsContent>
-
-              {/* Chat */}
-              <TabsContent value="chat" className="flex-1 flex flex-col m-0 p-0 min-h-0 overflow-hidden outline-none">
-                <ScrollArea className="flex-1 p-3">
-                  {chatMessages.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-32 gap-2 text-zinc-600">
-                      <MessageSquare className="w-6 h-6 opacity-40" />
-                      <p className="text-xs">No messages yet</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {chatMessages.map(msg => {
-                        const isMe = msg.sender === username;
-                        return (
-                          <div key={msg.id} className={`flex flex-col max-w-[85%] ${isMe ? 'ml-auto items-end' : 'items-start'}`}>
-                            <div className="flex items-center gap-1.5 mb-0.5 px-1">
-                              <span className="text-[10px] font-bold text-zinc-400">{msg.sender}</span>
-                              <span className="text-[9px] text-zinc-600 font-mono">
-                                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                              </span>
-                            </div>
-                            <div className={`px-3 py-1.5 rounded-2xl text-xs ${
-                              isMe ? 'bg-indigo-600 text-white rounded-tr-sm'
-                                   : 'bg-zinc-900 border border-zinc-800 text-zinc-200 rounded-tl-sm'
-                            }`}>{msg.message}</div>
-                          </div>
-                        );
-                      })}
-                      <div ref={chatBottomRef} />
-                    </div>
-                  )}
-                </ScrollArea>
-                <form onSubmit={handleSendChat} className="flex gap-2 p-3 border-t border-zinc-800 bg-zinc-950/30 shrink-0">
-                  <Input
-                    placeholder="Message room…"
-                    value={chatInput}
-                    onChange={e => setChatInput(e.target.value)}
-                    className="bg-zinc-950 border-zinc-800 text-xs text-zinc-100 placeholder:text-zinc-600 focus-visible:ring-indigo-500 h-8"
-                  />
-                  <Button type="submit" size="icon" disabled={!chatInput.trim()}
-                    className="bg-indigo-600 hover:bg-indigo-500 h-8 w-8 rounded-lg shrink-0">
-                    <Send className="w-3.5 h-3.5" />
-                  </Button>
-                </form>
-              </TabsContent>
-            </Tabs>
-          </Card>
+              ))}
+            </div>
+          </div>
+          <QueuePanel />
+          <ChatPanel />
         </div>
       </main>
+
+      {/* ── Mobile Layout ──────────────────────────────────────────── */}
+      <div className="md:hidden flex flex-col flex-1 overflow-hidden">
+
+        {/* Mobile panel content */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-3">
+          {mobilePanel === 'player' && (
+            <>
+              <CustomPlayer
+                url={currentTrack?.url ?? null}
+                isPlaying={isPlaying} seekTime={seekTime} isHost={isHost}
+                volume={volume} onVolumeChange={setVolume}
+                onProgress={handleProgress} onDuration={() => {}}
+                onPlayToggle={handlePlayToggle} onSeek={handleSeek}
+                onEnded={handleEnded} onNext={handleNext} onPrev={handlePrev}
+                hasPrev={playlist.length > 1} hasNext={playlist.length > 1}
+              />
+              {currentTrack && (
+                <div className="ss-card flex items-center gap-3 px-4 py-3">
+                  {currentTrack.thumbnail
+                    ? <img src={currentTrack.thumbnail} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" />
+                    : <div className="w-9 h-9 rounded-lg bg-secondary border border-border flex items-center justify-center shrink-0"><Film className="w-4 h-4 text-muted-foreground" /></div>}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold text-foreground truncate">{currentTrack.title}</p>
+                    <p className="text-[10px] text-muted-foreground truncate">by {currentTrack.addedBy}</p>
+                  </div>
+                </div>
+              )}
+              {/* Room code on mobile */}
+              <button onClick={copyRoomId} className="ss-card w-full flex items-center justify-between px-4 py-3">
+                <span className="text-xs text-muted-foreground">Room Code</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono font-bold text-primary tracking-widest">{roomId}</span>
+                  {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5 text-muted-foreground" />}
+                </div>
+              </button>
+              {/* Users */}
+              <div className="ss-card px-4 py-3">
+                <p className="text-xs font-semibold text-muted-foreground flex items-center gap-2 mb-2"><Users className="w-3.5 h-3.5 text-primary" />Listeners</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {users.map(u => (
+                    <div key={u.id} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
+                      u.isHost ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-secondary border-border text-muted-foreground'}`}>
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                      {u.username}
+                      {u.isHost && <span className="text-[9px]">DJ</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+          {mobilePanel === 'add'    && <AddPanel />}
+          {mobilePanel === 'queue'  && <QueuePanel />}
+          {mobilePanel === 'chat'   && <ChatPanel />}
+        </div>
+
+        {/* Mobile bottom nav */}
+        <div className="shrink-0 border-t border-border bg-card">
+          <div className="grid grid-cols-4 divide-x divide-border">
+            {([
+              { id: 'player', icon: Music2,        label: 'Player' },
+              { id: 'add',    icon: Search,        label: 'Search' },
+              { id: 'queue',  icon: ListMusic,     label: 'Queue'  },
+              { id: 'chat',   icon: MessageSquare, label: 'Chat'   },
+            ] as const).map(({ id, icon: Icon, label }) => (
+              <button
+                key={id}
+                onClick={() => setMobilePanel(id)}
+                className={`flex flex-col items-center gap-1 py-3 text-[10px] font-semibold transition-colors ${
+                  mobilePanel === id ? 'text-primary' : 'text-muted-foreground'
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                {label}
+                {/* Active dot */}
+                {mobilePanel === id && <span className="w-1 h-1 rounded-full bg-primary" />}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
     </div>
   );
 }
