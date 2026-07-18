@@ -7,7 +7,7 @@ import { getYoutubeVideoInfo } from '@/lib/youtube';
 import {
   Users, Copy, Check, Send, Plus, Trash2,
   Film, MessageSquare, ListMusic, LogOut,
-  Search, Link, X, Loader2, Music2, ChevronLeft
+  Search, Link, X, Loader2, Music2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -77,17 +77,20 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
   const [pasteUrl,      setPasteUrl]      = useState('');
   const [isPasting,     setIsPasting]     = useState(false);
 
-  // Mobile panel toggle ('player' | 'add' | 'queue' | 'chat')
+  // Mobile view panel selector: 'player' | 'add' | 'queue' | 'chat'
   const [mobilePanel,   setMobilePanel]   = useState<'player' | 'add' | 'queue' | 'chat'>('player');
 
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const stateRef      = useRef({ isPlaying, seekTime, currentIndex });
-  useEffect(() => { stateRef.current = { isPlaying, seekTime, currentIndex }; }, [isPlaying, seekTime, currentIndex]);
+
+  useEffect(() => {
+    stateRef.current = { isPlaying, seekTime, currentIndex };
+  }, [isPlaying, seekTime, currentIndex]);
 
   const currentSocketId = socket?.id;
   const isHost = users.find(u => u.id === currentSocketId)?.isHost ?? false;
 
-  // ── Socket listeners ──────────────────────────────────────────────────────
+  // ── Socket event handling ─────────────────────────────────────────────────
   useEffect(() => {
     if (!socket) return;
     socket.on('room:users-updated', (u: User[]) => setUsers(u));
@@ -112,9 +115,11 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
     };
   }, [socket, roomId]);
 
-  useEffect(() => { chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
 
-  // ── Playback ──────────────────────────────────────────────────────────────
+  // ── Playback control handlers ─────────────────────────────────────────────
   const handlePlayToggle = (p: boolean) => { if (!isHost) return; setIsPlaying(p); socket?.emit('playback:state', { roomId, isPlaying: p, seekTime }); };
   const handleSeek       = (s: number)  => { if (!isHost) return; setSeekTime(s); socket?.emit('playback:seek', { roomId, seekTime: s }); };
   const handleProgress   = (t: number)  => { if (!isHost) return; setSeekTime(t); };
@@ -125,7 +130,7 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
   const removeTrack      = (e: React.MouseEvent, id: string) => { e.stopPropagation(); socket?.emit('playlist:remove', { roomId, itemId: id }); };
   const clearQueue       = ()           => { if (!isHost) return; socket?.emit('playlist:clear', { roomId }); };
 
-  // ── Search ────────────────────────────────────────────────────────────────
+  // ── YouTube Search API call ───────────────────────────────────────────────
   const handleSearch = useCallback(async (e?: React.FormEvent) => {
     e?.preventDefault();
     const q = searchQuery.trim();
@@ -136,7 +141,7 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Search failed');
       setSearchResults(data.results || []);
-      if (!data.results?.length) setSearchError('No results. Try a different search.');
+      if (!data.results?.length) setSearchError('No results found. Try a different search.');
     } catch (err: any) {
       setSearchError(err.message || 'Search failed. Check your API key in backend/.env');
     } finally {
@@ -147,7 +152,16 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
   const addFromSearch = async (result: SearchResult) => {
     if (!socket) return;
     setAddingId(result.id);
-    socket.emit('playlist:add', { roomId, item: { title: result.title, url: result.url, type: 'youtube', addedBy: username, thumbnail: result.thumbnail } });
+    socket.emit('playlist:add', {
+      roomId,
+      item: {
+        title: result.title,
+        url: result.url,
+        type: 'youtube',
+        addedBy: username,
+        thumbnail: result.thumbnail
+      }
+    });
     toast.success('Added to queue');
     setAddingId(null);
   };
@@ -182,27 +196,28 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
 
   const currentTrack = playlist[currentIndex] ?? null;
 
-  // ── Add panel (Search + Paste tabs) ─────────────────────────────────────
-  const AddPanel = () => (
-    <div className="ss-card overflow-hidden">
+  // ── Render Helpers (safely inlined during render to prevent component unmounting focus loss) ──
+  const renderAddPanel = () => (
+    <div className="ss-card overflow-hidden bg-card border-border">
       <Tabs defaultValue="search">
         <div className="border-b border-border px-4 pt-4 pb-0">
           <TabsList className="grid grid-cols-2 bg-secondary p-0.5 w-44">
-            <TabsTrigger value="search" className="data-[state=active]:bg-card data-[state=active]:text-primary gap-1.5 text-xs py-1.5">
-              <Search className="w-3 h-3" /> Search
+            <TabsTrigger value="search" className="data-[state=active]:bg-card data-[state=active]:text-primary gap-1.5 text-xs py-1.5 font-semibold">
+              <Search className="w-3.5 h-3.5" /> Search
             </TabsTrigger>
-            <TabsTrigger value="url" className="data-[state=active]:bg-card data-[state=active]:text-primary gap-1.5 text-xs py-1.5">
-              <Link className="w-3 h-3" /> URL
+            <TabsTrigger value="url" className="data-[state=active]:bg-card data-[state=active]:text-primary gap-1.5 text-xs py-1.5 font-semibold">
+              <Link className="w-3.5 h-3.5" /> URL
             </TabsTrigger>
           </TabsList>
         </div>
 
+        {/* Search View */}
         <TabsContent value="search" className="m-0 p-4 space-y-3">
           <form onSubmit={handleSearch} className="flex gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
               <Input
-                placeholder="Search YouTube…"
+                placeholder="Search YouTube videos..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 disabled={isSearching}
@@ -216,7 +231,7 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
               )}
             </div>
             <Button type="submit" disabled={isSearching || !searchQuery.trim()}
-              className="bg-primary hover:bg-blue-500 text-white h-10 px-4">
+              className="bg-primary hover:bg-blue-500 text-white h-10 px-4 shrink-0 rounded-lg">
               {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
             </Button>
           </form>
@@ -226,22 +241,22 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
           )}
 
           {searchResults.length > 0 && (
-            <div className="space-y-2 max-h-64 overflow-y-auto">
+            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
               {searchResults.map(result => (
-                <div key={result.id} className="flex items-center gap-3 p-2 rounded-xl border border-border hover:bg-secondary transition-colors">
-                  <div className="w-16 h-11 rounded-lg overflow-hidden bg-secondary shrink-0">
+                <div key={result.id} className="flex items-center gap-3 p-2 rounded-lg border border-border bg-[#131620] hover:bg-secondary transition-colors">
+                  <div className="w-16 h-10 rounded overflow-hidden bg-secondary shrink-0">
                     {result.thumbnail && <img src={result.thumbnail} alt="" className="w-full h-full object-cover" />}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-foreground line-clamp-2 leading-snug">{result.title}</p>
-                    <p className="text-[10px] text-muted-foreground truncate mt-0.5">{result.channel}</p>
+                    <p className="text-xs font-semibold text-foreground line-clamp-1 leading-normal">{result.title}</p>
+                    <p className="text-[10px] text-muted-foreground truncate">{result.channel}</p>
                   </div>
                   <button
                     onClick={() => addFromSearch(result)}
                     disabled={addingId === result.id}
-                    className="shrink-0 w-8 h-8 rounded-lg bg-primary hover:bg-blue-500 flex items-center justify-center active:scale-90 transition-all disabled:opacity-60"
+                    className="shrink-0 w-8 h-8 rounded-lg bg-primary hover:bg-blue-500 flex items-center justify-center active:scale-90 transition-all disabled:opacity-60 text-white"
                   >
-                    {addingId === result.id ? <Loader2 className="w-3.5 h-3.5 text-white animate-spin" /> : <Plus className="w-3.5 h-3.5 text-white" />}
+                    {addingId === result.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
                   </button>
                 </div>
               ))}
@@ -251,13 +266,14 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
           {!isSearching && !searchResults.length && !searchError && (
             <div className="py-8 flex flex-col items-center gap-2 text-muted-foreground">
               <Search className="w-6 h-6 opacity-30" />
-              <p className="text-xs text-center">Type to search YouTube videos</p>
+              <p className="text-xs text-center leading-relaxed">Search for any song or video on YouTube<br />to add it to the shared list</p>
             </div>
           )}
         </TabsContent>
 
+        {/* URL Paste View */}
         <TabsContent value="url" className="m-0 p-4 space-y-3">
-          <p className="text-xs text-muted-foreground">Paste a YouTube video URL to add it directly.</p>
+          <p className="text-xs text-muted-foreground">Paste a direct YouTube link to add it to the room.</p>
           <form onSubmit={handlePasteUrl} className="flex gap-2">
             <Input
               placeholder="https://youtube.com/watch?v=..."
@@ -267,7 +283,7 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
               className="ss-input h-10 flex-1"
             />
             <Button type="submit" disabled={isPasting || !pasteUrl.trim()}
-              className="bg-primary hover:bg-blue-500 text-white h-10 px-4">
+              className="bg-primary hover:bg-blue-500 text-white h-10 px-4 shrink-0 rounded-lg">
               {isPasting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
             </Button>
           </form>
@@ -276,22 +292,21 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
     </div>
   );
 
-  // ── Queue panel ──────────────────────────────────────────────────────────
-  const QueuePanel = () => (
-    <div className="ss-card flex flex-col overflow-hidden" style={{ maxHeight: '420px' }}>
+  const renderQueuePanel = () => (
+    <div className="ss-card flex flex-col overflow-hidden bg-card border-border">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
         <span className="text-xs font-semibold text-foreground flex items-center gap-2">
           <ListMusic className="w-3.5 h-3.5 text-primary" /> Queue ({playlist.length})
         </span>
         {isHost && playlist.length > 0 && (
-          <button onClick={clearQueue} className="text-[10px] text-red-400 hover:text-red-300 font-semibold">Clear</button>
+          <button onClick={clearQueue} className="text-[10px] text-red-400 hover:text-red-300 font-semibold transition-colors">Clear All</button>
         )}
       </div>
-      <ScrollArea className="flex-1 p-3">
+      <ScrollArea className="flex-1 p-3 max-h-[360px] overflow-y-auto">
         {playlist.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-28 gap-2 text-muted-foreground">
             <Film className="w-5 h-5 opacity-30" />
-            <p className="text-xs">Queue is empty</p>
+            <p className="text-xs">No songs in the queue</p>
           </div>
         ) : (
           <div className="space-y-1.5">
@@ -299,13 +314,11 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
               const isCurrent = idx === currentIndex;
               return (
                 <div key={track.id} onClick={() => selectTrack(idx)}
-                  className={`group flex items-center gap-2.5 p-2 rounded-xl border transition-colors ${
-                    isCurrent
-                      ? 'bg-primary/10 border-primary/30'
-                      : 'border-border hover:bg-secondary'
+                  className={`group flex items-center gap-2.5 p-2 rounded-lg border transition-colors ${
+                    isCurrent ? 'bg-primary/10 border-primary/30' : 'border-border hover:bg-secondary'
                   } ${isHost ? 'cursor-pointer' : 'cursor-default'}`}>
 
-                  <div className={`w-8 h-8 rounded-lg shrink-0 overflow-hidden flex items-center justify-center border ${isCurrent ? 'border-primary/40' : 'border-border'}`}>
+                  <div className={`w-8 h-8 rounded shrink-0 overflow-hidden flex items-center justify-center border ${isCurrent ? 'border-primary/40' : 'border-border'}`}>
                     {track.thumbnail
                       ? <img src={track.thumbnail} alt="" className="w-full h-full object-cover" />
                       : <Film className="w-3.5 h-3.5 text-muted-foreground" />}
@@ -316,9 +329,8 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
                     <p className="text-[9px] text-muted-foreground">by {track.addedBy}</p>
                   </div>
 
-                  {/* Playing indicator */}
                   {isCurrent && isPlaying && (
-                    <div className="flex items-end gap-0.5 h-4 shrink-0">
+                    <div className="flex items-end gap-0.5 h-3.5 shrink-0 pr-1">
                       {[1,2,3].map(i => (
                         <span key={i} className="w-0.5 bg-primary rounded-full audio-bar"
                           style={{ height: `${30 + i * 25}%`, animationDelay: `${i * 0.15}s` }} />
@@ -328,8 +340,8 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
 
                   {(isHost || track.addedBy === username) && (
                     <button onClick={e => removeTrack(e, track.id)}
-                      className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-400 p-1 rounded transition-all shrink-0">
-                      <Trash2 className="w-3 h-3" />
+                      className="opacity-0 group-hover:opacity-100 md:opacity-0 text-muted-foreground hover:text-red-400 p-1 rounded transition-all shrink-0">
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   )}
                 </div>
@@ -341,17 +353,16 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
     </div>
   );
 
-  // ── Chat panel ───────────────────────────────────────────────────────────
-  const ChatPanel = () => (
-    <div className="ss-card flex flex-col overflow-hidden" style={{ maxHeight: '420px' }}>
+  const renderChatPanel = () => (
+    <div className="ss-card flex flex-col overflow-hidden bg-card border-border">
       <div className="flex items-center px-4 py-3 border-b border-border shrink-0">
         <span className="text-xs font-semibold text-foreground flex items-center gap-2">
           <MessageSquare className="w-3.5 h-3.5 text-primary" /> Chat
         </span>
       </div>
-      <ScrollArea className="flex-1 p-3">
+      <ScrollArea className="flex-1 p-3 max-h-[280px] overflow-y-auto">
         {chatMessages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-28 gap-2 text-muted-foreground">
+          <div className="flex flex-col items-center justify-center h-24 gap-2 text-muted-foreground">
             <MessageSquare className="w-5 h-5 opacity-30" />
             <p className="text-xs">No messages yet</p>
           </div>
@@ -377,7 +388,7 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
           </div>
         )}
       </ScrollArea>
-      <form onSubmit={handleSendChat} className="flex gap-2 p-3 border-t border-border shrink-0">
+      <form onSubmit={handleSendChat} className="flex gap-2 p-3 border-t border-border bg-card shrink-0">
         <Input
           placeholder="Send a message…"
           value={chatInput}
@@ -385,7 +396,7 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
           className="ss-input flex-1 h-9 text-xs"
         />
         <Button type="submit" size="icon" disabled={!chatInput.trim()}
-          className="bg-primary hover:bg-blue-500 text-white h-9 w-9 shrink-0">
+          className="bg-primary hover:bg-blue-500 text-white h-9 w-9 shrink-0 flex items-center justify-center rounded-lg">
           <Send className="w-3.5 h-3.5" />
         </Button>
       </form>
@@ -393,22 +404,22 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
   );
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col">
+    <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
 
-      {/* ── Top Bar ─────────────────────────────────────────────────── */}
+      {/* ── Header ── */}
       <header className="sticky top-0 z-50 border-b border-border bg-card px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
             <Music2 className="w-4 h-4 text-white" />
           </div>
           <div className="leading-none">
-            <p className="text-sm font-bold text-foreground">SoundSync</p>
+            <p className="text-sm font-bold text-foreground tracking-tight">SoundSync</p>
             <p className="text-[10px] text-muted-foreground">Real-time room</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Room code */}
+          {/* Room Code (desktop) */}
           <button onClick={copyRoomId}
             className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary border border-border hover:bg-accent transition-colors">
             <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-widest">Room</span>
@@ -416,7 +427,7 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
             {copied ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3 text-muted-foreground" />}
           </button>
 
-          {/* Connection dot */}
+          {/* Connection Indicator */}
           <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`} />
 
           <button onClick={onLeave}
@@ -427,9 +438,8 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
         </div>
       </header>
 
-      {/* ── Desktop Layout ─────────────────────────────────────────── */}
+      {/* ── Desktop Layout (MD and up) ── */}
       <main className="hidden md:grid md:grid-cols-3 gap-4 p-4 max-w-7xl w-full mx-auto flex-1">
-
         {/* Left: Player + Add */}
         <div className="md:col-span-2 flex flex-col gap-4">
           <CustomPlayer
@@ -446,7 +456,7 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
               {currentTrack.thumbnail
                 ? <img src={currentTrack.thumbnail} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" />
                 : <div className="w-10 h-10 rounded-lg bg-secondary border border-border flex items-center justify-center shrink-0"><Film className="w-4 h-4 text-muted-foreground" /></div>}
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="text-xs font-bold text-foreground truncate">{currentTrack.title}</p>
                 <p className="text-[10px] text-muted-foreground">Added by {currentTrack.addedBy}</p>
               </div>
@@ -457,12 +467,12 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
               )}
             </div>
           )}
-          <AddPanel />
+          {renderAddPanel()}
         </div>
 
         {/* Right: Users + Queue + Chat */}
         <div className="flex flex-col gap-4">
-          {/* Users */}
+          {/* Listeners list */}
           <div className="ss-card px-4 py-3">
             <p className="text-xs font-semibold text-muted-foreground flex items-center gap-2 mb-3">
               <Users className="w-3.5 h-3.5 text-primary" /> Listeners ({users.length})
@@ -481,18 +491,17 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
               ))}
             </div>
           </div>
-          <QueuePanel />
-          <ChatPanel />
+          {renderQueuePanel()}
+          {renderChatPanel()}
         </div>
       </main>
 
-      {/* ── Mobile Layout ──────────────────────────────────────────── */}
+      {/* ── Mobile Layout (Below MD) ── */}
       <div className="md:hidden flex flex-col flex-1 overflow-hidden">
-
-        {/* Mobile panel content */}
+        {/* Mobile active panel display */}
         <div className="flex-1 overflow-y-auto p-3 space-y-3">
           {mobilePanel === 'player' && (
-            <>
+            <div className="space-y-3">
               <CustomPlayer
                 url={currentTrack?.url ?? null}
                 isPlaying={isPlaying} seekTime={seekTime} isHost={isHost}
@@ -503,7 +512,7 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
                 hasPrev={playlist.length > 1} hasNext={playlist.length > 1}
               />
               {currentTrack && (
-                <div className="ss-card flex items-center gap-3 px-4 py-3">
+                <div className="ss-card flex items-center gap-3 px-4 py-3 bg-card border-border">
                   {currentTrack.thumbnail
                     ? <img src={currentTrack.thumbnail} alt="" className="w-9 h-9 rounded-lg object-cover shrink-0" />
                     : <div className="w-9 h-9 rounded-lg bg-secondary border border-border flex items-center justify-center shrink-0"><Film className="w-4 h-4 text-muted-foreground" /></div>}
@@ -513,36 +522,38 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
                   </div>
                 </div>
               )}
-              {/* Room code on mobile */}
-              <button onClick={copyRoomId} className="ss-card w-full flex items-center justify-between px-4 py-3">
-                <span className="text-xs text-muted-foreground">Room Code</span>
+              {/* Room Code on mobile */}
+              <button onClick={copyRoomId} className="ss-card w-full flex items-center justify-between px-4 py-3 bg-card border-border">
+                <span className="text-xs text-muted-foreground font-semibold">Room Code</span>
                 <div className="flex items-center gap-2">
                   <span className="font-mono font-bold text-primary tracking-widest">{roomId}</span>
                   {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5 text-muted-foreground" />}
                 </div>
               </button>
-              {/* Users */}
-              <div className="ss-card px-4 py-3">
-                <p className="text-xs font-semibold text-muted-foreground flex items-center gap-2 mb-2"><Users className="w-3.5 h-3.5 text-primary" />Listeners</p>
+              {/* Listeners list */}
+              <div className="ss-card px-4 py-3 bg-card border-border">
+                <p className="text-xs font-semibold text-muted-foreground flex items-center gap-2 mb-2">
+                  <Users className="w-3.5 h-3.5 text-primary" /> Listeners
+                </p>
                 <div className="flex flex-wrap gap-1.5">
                   {users.map(u => (
                     <div key={u.id} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border ${
                       u.isHost ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-secondary border-border text-muted-foreground'}`}>
                       <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
                       {u.username}
-                      {u.isHost && <span className="text-[9px]">DJ</span>}
+                      {u.isHost && <span className="text-[9px] font-bold">DJ</span>}
                     </div>
                   ))}
                 </div>
               </div>
-            </>
+            </div>
           )}
-          {mobilePanel === 'add'    && <AddPanel />}
-          {mobilePanel === 'queue'  && <QueuePanel />}
-          {mobilePanel === 'chat'   && <ChatPanel />}
+          {mobilePanel === 'add'    && renderAddPanel()}
+          {mobilePanel === 'queue'  && renderQueuePanel()}
+          {mobilePanel === 'chat'   && renderChatPanel()}
         </div>
 
-        {/* Mobile bottom nav */}
+        {/* Mobile Navigation bar */}
         <div className="shrink-0 border-t border-border bg-card">
           <div className="grid grid-cols-4 divide-x divide-border">
             {([
@@ -560,7 +571,6 @@ export default function Room({ roomId, username, initialRoomState, onLeave }: Ro
               >
                 <Icon className="w-4 h-4" />
                 {label}
-                {/* Active dot */}
                 {mobilePanel === id && <span className="w-1 h-1 rounded-full bg-primary" />}
               </button>
             ))}
